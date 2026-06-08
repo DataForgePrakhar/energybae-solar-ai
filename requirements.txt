@@ -4,4 +4,4 @@ google-generativeai
 python-dotenv
 pillow
 pymupdf
-gunicorn
+gunicorngroq
