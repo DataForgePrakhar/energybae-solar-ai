@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Energybae — Solar Bill Analyzer</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"/>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="header-inner">
+      <div class="logo">
+        🌿 <span>Energy<b>Bae</b></span>
+      </div>
+      <p class="tagline">Solar Load Calculator — Bill to Quotation</p>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main>
+
+    <!-- Upload Card -->
+    <div class="card" id="upload-card">
+      <h2>Upload Electricity Bill</h2>
+      <p class="subtitle">Upload your MSEDCL bill and get an instant solar quotation</p>
+
+      <div class="upload-zone" id="upload-zone">
+        <input type="file" id="bill-input" accept=".jpg,.jpeg,.png,.webp,.pdf" hidden/>
+        <div class="upload-icon">📄</div>
+        <p class="upload-text">Drag & drop your bill here</p>
+        <p class="upload-sub">or</p>
+        <button class="btn-outline" onclick="document.getElementById('bill-input').click()">
+          Browse File
+        </button>
+        <p class="upload-formats">Supports: JPG, PNG, WEBP, PDF • Max 10MB</p>
+      </div>
+
+      <!-- File preview -->
+      <div class="file-preview" id="file-preview" style="display:none">
+        <span id="file-name"></span>
+        <button class="remove-btn" onclick="removeFile()">✕</button>
+      </div>
+
+      <!-- Upload button -->
+      <button class="btn-primary" id="upload-btn" onclick="uploadBill()" disabled>
+        ⚡ Generate Solar Quotation
+      </button>
+    </div>
+
+    <!-- Loading -->
+    <div class="card loading-card" id="loading-card" style="display:none">
+      <div class="spinner"></div>
+      <h3>Analyzing your bill...</h3>
+      <p id="loading-text">Reading bill data with AI</p>
+    </div>
+
+    <!-- Error -->
+    <div class="card error-card" id="error-card" style="display:none">
+      <div class="error-icon">⚠️</div>
+      <h3>Something went wrong</h3>
+      <p id="error-message"></p>
+      <button class="btn-outline" onclick="resetForm()">Try Again</button>
+    </div>
+
+    <!-- Results -->
+    <div class="card result-card" id="result-card" style="display:none">
+
+      <div class="result-header">
+        <div class="result-badge">✅ Quotation Ready</div>
+        <h2 id="result-name"></h2>
+        <p id="result-consumer-no"></p>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-box">
+          <div class="stat-icon">🔌</div>
+          <div class="stat-label">Sanctioned Load</div>
+          <div class="stat-value" id="stat-load"></div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-icon">📊</div>
+          <div class="stat-label">Avg Monthly Units</div>
+          <div class="stat-value" id="stat-units"></div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-icon">💰</div>
+          <div class="stat-label">Latest Bill Amount</div>
+          <div class="stat-value" id="stat-bill"></div>
+        </div>
+        <div class="stat-box highlight">
+          <div class="stat-icon">☀️</div>
+          <div class="stat-label">Solar Recommended</div>
+          <div class="stat-value" id="stat-solar"></div>
+        </div>
+      </div>
+
+      <!-- Monthly Units Table -->
+      <div class="table-section">
+        <h3>📅 Monthly Consumption History</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Month</th>
+              <th>Units (kWh)</th>
+            </tr>
+          </thead>
+          <tbody id="monthly-table"></tbody>
+        </table>
+      </div>
+
+      <!-- Download -->
+      <div class="download-section">
+        <p>Full solar load analysis ready in Excel</p>
+        <button class="btn-primary" id="download-btn" onclick="downloadExcel()">
+          📥 Download Solar Quotation (Excel)
+        </button>
+      </div>
+
+      <button class="btn-outline mt" onclick="resetForm()">
+        🔄 Analyze Another Bill
+      </button>
+
+    </div>
+
+    <!-- History Section -->
+    <div class="card history-card" id="history-card">
+      <div class="history-header">
+        <h3>📋 Recent Quotations</h3>
+        <button class="btn-clear" onclick="clearHistory()">Clear All</button>
+      </div>
+      <div id="history-empty" style="display:none">
+        <p class="history-empty-text">No bills processed yet.</p>
+      </div>
+      <div class="table-wrapper" id="history-table-wrapper">
+        <table id="history-table">
+          <thead>
+            <tr>
+              <th>Consumer</th>
+              <th>Solar Size</th>
+              <th>Panels</th>
+              <th>Avg Units</th>
+              <th>Processed</th>
+              <th>Download</th>
+            </tr>
+          </thead>
+          <tbody id="history-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <p>🌿 Energybae — Empowering People with Renewable Energy Solutions</p>
+    <p>Pimpri, Pune • energybae.co@gmail.com • +91 9112233120</p>
+  </footer>
+
+<script>
+  let selectedFile = null;
+  let downloadFilename = null;
+  const loadingMessages = [
+    "Reading bill data with AI...",
+    "Extracting monthly units...",
+    "Calculating solar requirements...",
+    "Generating Excel quotation..."
+  ];
+  let loadingInterval;
+
+  // Drag & Drop
+  const zone = document.getElementById("upload-zone");
+  zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("dragover"); });
+  zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
+  zone.addEventListener("drop", e => {
+    e.preventDefault();
+    zone.classList.remove("dragover");
+    const file = e.dataTransfer.files[0];
+    if (file) setFile(file);
+  });
+
+  document.getElementById("bill-input").addEventListener("change", e => {
+    if (e.target.files[0]) setFile(e.target.files[0]);
+  });
+
+  function setFile(file) {
+    const allowed = ["jpg","jpeg","png","webp","pdf"];
+    const ext = file.name.split(".").pop().toLowerCase();
+    if (!allowed.includes(ext)) {
+      showError("Invalid file type. Please upload JPG, PNG, WEBP or PDF.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      showError("File too large. Maximum size is 10MB.");
+      return;
+    }
+    selectedFile = file;
+    document.getElementById("file-name").textContent = file.name;
+    document.getElementById("file-preview").style.display = "flex";
+    document.getElementById("upload-btn").disabled = false;
+    document.getElementById("upload-zone").style.display = "none";
+  }
+
+  function removeFile() {
+    selectedFile = null;
+    document.getElementById("bill-input").value = "";
+    document.getElementById("file-preview").style.display = "none";
+    document.getElementById("upload-btn").disabled = true;
+    document.getElementById("upload-zone").style.display = "flex";
+  }
+
+  async function uploadBill() {
+    if (!selectedFile) return;
+    showLoading();
+    const formData = new FormData();
+    formData.append("bill", selectedFile);
+    try {
+      const response = await fetch("/upload", { method: "POST", body: formData });
+      const data = await response.json();
+      hideLoading();
+      if (!response.ok || data.error) {
+        showError(data.error || "Something went wrong. Please try again.");
+        return;
+      }
+      showResults(data);
+      loadHistory(); // refresh history after upload
+    } catch (err) {
+      hideLoading();
+      showError("Network error. Please check your connection and try again.");
+    }
+  }
+
+  function showResults(data) {
+    document.getElementById("result-name").textContent = data.consumer_name || "—";
+    document.getElementById("result-consumer-no").textContent = `Consumer No: ${data.consumer_no || "—"}`;
+    document.getElementById("stat-load").textContent = data.sanctioned_load || "—";
+    document.getElementById("stat-bill").textContent = data.bill_amount ? `₹${data.bill_amount}` : "—";
+
+    const units = data.monthly_units || [];
+    const avg = units.length ? Math.round(units.reduce((s, m) => s + m.units, 0) / units.length) : "—";
+    document.getElementById("stat-units").textContent = avg !== "—" ? `${avg} kWh` : "—";
+
+    const solar = data.summary?.solar_capacity;
+    document.getElementById("stat-solar").textContent = solar ? `${solar} kWp` : "See Excel";
+
+    const tbody = document.getElementById("monthly-table");
+    tbody.innerHTML = "";
+    units.forEach(m => {
+      const row = document.createElement("tr");
+      const date = new Date(m.month);
+      const monthStr = date.toLocaleString("default", { month: "long", year: "numeric" });
+      row.innerHTML = `<td>${monthStr}</td><td>${m.units} kWh</td>`;
+      tbody.appendChild(row);
+    });
+
+    downloadFilename = data.download_file;
+    document.getElementById("upload-card").style.display = "none";
+    document.getElementById("result-card").style.display = "block";
+  }
+
+  function downloadExcel() {
+    if (downloadFilename) {
+      window.location.href = `/download/${downloadFilename}`;
+    }
+  }
+
+  function showLoading() {
+    document.getElementById("upload-card").style.display = "none";
+    document.getElementById("loading-card").style.display = "block";
+    document.getElementById("error-card").style.display = "none";
+    let i = 0;
+    loadingInterval = setInterval(() => {
+      document.getElementById("loading-text").textContent = loadingMessages[i % loadingMessages.length];
+      i++;
+    }, 2000);
+  }
+
+  function hideLoading() {
+    clearInterval(loadingInterval);
+    document.getElementById("loading-card").style.display = "none";
+  }
+
+  function showError(msg) {
+    document.getElementById("upload-card").style.display = "none";
+    document.getElementById("error-message").textContent = msg;
+    document.getElementById("error-card").style.display = "block";
+  }
+
+  function resetForm() {
+    selectedFile = null;
+    downloadFilename = null;
+    document.getElementById("bill-input").value = "";
+    document.getElementById("file-preview").style.display = "none";
+    document.getElementById("upload-btn").disabled = true;
+    document.getElementById("upload-zone").style.display = "flex";
+    document.getElementById("upload-card").style.display = "block";
+    document.getElementById("result-card").style.display = "none";
+    document.getElementById("error-card").style.display = "none";
+    document.getElementById("loading-card").style.display = "none";
+  }
+
+  // ── History ────────────────────────────────────────────────────
+  async function loadHistory() {
+    try {
+      const res = await fetch("/customers");
+      const data = await res.json();
+      renderHistory(data);
+    } catch (err) {
+      console.error("Could not load history");
+    }
+  }
+
+  function renderHistory(history) {
+    const tbody = document.getElementById("history-tbody");
+    const empty = document.getElementById("history-empty");
+    const wrapper = document.getElementById("history-table-wrapper");
+
+    tbody.innerHTML = "";
+
+    if (!history || history.length === 0) {
+      empty.style.display = "block";
+      wrapper.style.display = "none";
+      return;
+    }
+
+    empty.style.display = "none";
+    wrapper.style.display = "block";
+
+    history.forEach(entry => {
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td>
+          <a class="customer-link" href="/customer?id=${encodeURIComponent(entry.id)}">
+            <div class="consumer-name">${entry.consumer_name || "—"}</div>
+            <div class="consumer-no">No: ${entry.consumer_no || "—"}</div>
+          </a>
+        </td>
+        <td><span class="badge-green">${entry.solar_capacity || "—"} kWp</span></td>
+        <td>${entry.panels_required || "—"}</td>
+        <td>${entry.avg_units || "—"} kWh</td>
+        <td class="processed-date">${entry.last_updated || "—"}</td>
+        <td>
+          <button class="btn-download-sm" onclick="window.location.href='/download/${entry.latest_file}'">
+            📥
+          </button>
+        </td>
+      `;
+      tbody.appendChild(row);
+    });
+  }
+
+  async function clearHistory() {
+    if (!confirm("Clear all history?")) return;
+    await fetch("/history/clear", { method: "POST" });
+    renderHistory([]);
+  }
+
+  // Load history on page load
+  window.addEventListener("load", loadHistory);
+</script>
+
+</body>
+</html>

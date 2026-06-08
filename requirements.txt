@@ -1,0 +1,7 @@
+flask
+openpyxl
+google-generativeai
+python-dotenv
+pillow
+pymupdf
+gunicorn

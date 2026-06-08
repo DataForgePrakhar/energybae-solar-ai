@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Customer — Energybae</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"/>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="logo">🌿 <span>Energy<b>Bae</b></span></div>
+    <p class="tagline">Customer Quotation Manager</p>
+  </div>
+</header>
+
+<main>
+
+  <button class="btn-outline mb" onclick="window.location.href='/'">← Back</button>
+
+  <!-- Loading -->
+  <div class="card" id="loading-card">
+    <div class="spinner"></div>
+    <p style="text-align:center;color:#888;margin-top:12px">Loading customer...</p>
+  </div>
+
+  <!-- Customer Detail Card -->
+  <div class="card" id="customer-card" style="display:none">
+
+    <div class="result-header">
+      <div class="result-badge">👤 Customer Profile</div>
+      <h2 id="c-name"></h2>
+      <p id="c-no"></p>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-box highlight">
+        <div class="stat-icon">☀️</div>
+        <div class="stat-label">Solar Capacity</div>
+        <div class="stat-value" id="c-solar"></div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-icon">🔢</div>
+        <div class="stat-label">Panels Required</div>
+        <div class="stat-value" id="c-panels"></div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-icon">💰</div>
+        <div class="stat-label">Yearly Savings</div>
+        <div class="stat-value" id="c-savings"></div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-icon">📊</div>
+        <div class="stat-label">Avg Monthly Units</div>
+        <div class="stat-value" id="c-units"></div>
+      </div>
+    </div>
+
+    <!-- Monthly Units Table -->
+    <div class="section-title">📅 Monthly Consumption</div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr><th>Month</th><th>Units (kWh)</th></tr>
+        </thead>
+        <tbody id="c-monthly-table"></tbody>
+      </table>
+    </div>
+
+    <!-- Edit Details -->
+    <div class="section-title">✏️ Edit Details</div>
+    <div class="edit-grid">
+      <div class="edit-row">
+        <label>Consumer Name</label>
+        <input id="e-name" type="text"/>
+      </div>
+      <div class="edit-row">
+        <label>Consumer No</label>
+        <input id="e-no" type="text"/>
+      </div>
+      <div class="edit-row">
+        <label>Fixed Charges (₹)</label>
+        <input id="e-fixed" type="number"/>
+      </div>
+      <div class="edit-row">
+        <label>Sanctioned Load</label>
+        <input id="e-load" type="text"/>
+      </div>
+      <div class="edit-row">
+        <label>Connection Type</label>
+        <input id="e-conn" type="text"/>
+      </div>
+      <div class="edit-row">
+        <label>Latest Bill Amount (₹)</label>
+        <input id="e-bill" type="number"/>
+      </div>
+    </div>
+
+    <button class="btn-outline mt" onclick="saveEdits()">💾 Save Changes</button>
+    <div id="save-msg" style="display:none" class="success-msg">✅ Changes saved!</div>
+
+    <!-- Actions -->
+    <div class="section-title mt">⚡ Actions</div>
+    <div class="action-buttons">
+
+      <button class="btn-primary" onclick="regenerate()">
+        🔄 Regenerate Excel Quotation
+      </button>
+
+      <button class="btn-outline" onclick="downloadExcel()">
+        📥 Download Latest Quotation
+      </button>
+
+      <!-- Send Email -->
+      <div class="email-section">
+        <p style="font-size:0.85rem;color:#555;margin-bottom:10px;font-weight:600">📧 Send Quotation to Customer</p>
+        <div class="email-input-row">
+          <input type="email" id="email-input" placeholder="Enter customer email address"/>
+          <button class="btn-send" onclick="sendEmail()">Send</button>
+        </div>
+        <div id="email-status" style="display:none"></div>
+      </div>
+
+    </div>
+
+    <p class="last-updated" id="last-updated"></p>
+
+    <button class="btn-delete" onclick="deleteCustomer()">🗑️ Delete Customer</button>
+
+  </div>
+
+</main>
+
+<footer>
+  <p>🌿 Energybae — Empowering People with Renewable Energy Solutions</p>
+  <p>Pimpri, Pune • energybae.co@gmail.com • +91 9112233120</p>
+</footer>
+
+<script>
+  const customerId = new URLSearchParams(window.location.search).get("id");
+  let customerData = null;
+
+  async function loadCustomer() {
+    try {
+      const res = await fetch(`/customers/${customerId}`);
+      if (!res.ok) { showError("Customer not found."); return; }
+      customerData = await res.json();
+      renderCustomer(customerData);
+    } catch(e) {
+      showError("Could not load customer.");
+    }
+  }
+
+  function renderCustomer(c) {
+    document.getElementById("loading-card").style.display = "none";
+    document.getElementById("customer-card").style.display = "block";
+
+    document.getElementById("c-name").textContent    = c.consumer_name || "—";
+    document.getElementById("c-no").textContent      = `Consumer No: ${c.consumer_no || "—"}`;
+    document.getElementById("c-solar").textContent   = `${c.solar_capacity || "—"} kWp`;
+    document.getElementById("c-panels").textContent  = c.panels_required || "—";
+    document.getElementById("c-savings").textContent = c.yearly_savings ? `₹${Number(c.yearly_savings).toLocaleString()}` : "—";
+    document.getElementById("c-units").textContent   = `${c.avg_units || "—"} kWh`;
+    document.getElementById("last-updated").textContent = `Last updated: ${c.last_updated || "—"}`;
+
+    // Fill edit fields
+    document.getElementById("e-name").value  = c.consumer_name || "";
+    document.getElementById("e-no").value    = c.consumer_no || "";
+    document.getElementById("e-fixed").value = c.fixed_charges || 130;
+    document.getElementById("e-load").value  = c.sanctioned_load || "";
+    document.getElementById("e-conn").value  = c.connection_type || "";
+    document.getElementById("e-bill").value  = c.bill_amount || "";
+
+    // Monthly table
+    const tbody = document.getElementById("c-monthly-table");
+    tbody.innerHTML = "";
+    const units = c.monthly_units || [];
+    units.forEach(m => {
+      const row = document.createElement("tr");
+      const date = new Date(m.month);
+      const monthStr = date.toLocaleString("default", { month: "long", year: "numeric" });
+      row.innerHTML = `<td>${monthStr}</td><td>${m.units} kWh</td>`;
+      tbody.appendChild(row);
+    });
+  }
+
+  async function saveEdits() {
+    const updated = {
+      consumer_name:   document.getElementById("e-name").value,
+      consumer_no:     document.getElementById("e-no").value,
+      fixed_charges:   parseFloat(document.getElementById("e-fixed").value) || 130,
+      sanctioned_load: document.getElementById("e-load").value,
+      connection_type: document.getElementById("e-conn").value,
+      bill_amount:     parseFloat(document.getElementById("e-bill").value) || 0,
+    };
+
+    const res = await fetch(`/customers/${customerId}/update`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(updated)
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      const msg = document.getElementById("save-msg");
+      msg.style.display = "block";
+      setTimeout(() => msg.style.display = "none", 3000);
+    }
+  }
+
+  async function regenerate() {
+    const btn = document.querySelector(".btn-primary");
+    btn.textContent = "⏳ Generating...";
+    btn.disabled = true;
+
+    const res = await fetch(`/customers/${customerId}/regenerate`, { method: "POST" });
+    const data = await res.json();
+
+    btn.textContent = "🔄 Regenerate Excel Quotation";
+    btn.disabled = false;
+
+    if (data.success) {
+      customerData.latest_file = data.download_file;
+      alert("✅ Excel regenerated successfully!");
+    } else {
+      alert("❌ " + (data.error || "Regeneration failed"));
+    }
+  }
+
+  function downloadExcel() {
+    if (customerData && customerData.latest_file) {
+      window.location.href = `/download/${customerData.latest_file}`;
+    } else {
+      alert("No file available. Please regenerate first.");
+    }
+  }
+
+  async function sendEmail() {
+    const email = document.getElementById("email-input").value.trim();
+    if (!email || !email.includes("@")) {
+      showEmailStatus("Please enter a valid email address.", "error");
+      return;
+    }
+
+    const btn = document.querySelector(".btn-send");
+    btn.textContent = "⏳ Sending...";
+    btn.disabled = true;
+
+    const res = await fetch(`/customers/${customerId}/send-email`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ email })
+    });
+    const data = await res.json();
+
+    btn.textContent = "Send";
+    btn.disabled = false;
+
+    if (data.success) {
+      showEmailStatus(`✅ ${data.message}`, "success");
+      document.getElementById("email-input").value = "";
+    } else {
+      showEmailStatus(`❌ ${data.message}`, "error");
+    }
+  }
+
+  function showEmailStatus(msg, type) {
+    const el = document.getElementById("email-status");
+    el.textContent = msg;
+    el.className = type === "success" ? "success-msg" : "error-msg";
+    el.style.display = "block";
+    setTimeout(() => el.style.display = "none", 5000);
+  }
+
+  async function deleteCustomer() {
+    if (!confirm(`Delete ${customerData?.consumer_name}? This cannot be undone.`)) return;
+    await fetch(`/customers/${customerId}/delete`, { method: "POST" });
+    window.location.href = "/";
+  }
+
+  function showError(msg) {
+    document.getElementById("loading-card").innerHTML =
+      `<p style="text-align:center;color:#c62828;padding:20px">${msg}</p>`;
+  }
+
+  window.addEventListener("load", loadCustomer);
+</script>
+
+</body>
+</html>
