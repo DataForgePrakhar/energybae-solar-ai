@@ -1,13 +1,12 @@
 """
 excel_filler.py
 Single consumer solar quotation filler.
-Months pre-filled in template — only fills units, consumer details, bill amount.
 """
 
 import shutil
 import os
+from datetime import datetime
 from openpyxl import load_workbook
-from openpyxl.styles import Alignment
 
 
 def fill_excel(data: dict, template_path: str, output_path: str) -> str:
@@ -23,10 +22,9 @@ def fill_excel(data: dict, template_path: str, output_path: str) -> str:
     except Exception as e:
         raise ValueError(f"Could not open template: {str(e)}")
 
-    # ── Consumer Details ───────────────────────────────────────
+    # Consumer Details
     ws["D6"] = data.get("consumer_name", "")
 
-    # Consumer No as text — prevents scientific notation
     consumer_no = str(data.get("consumer_no", "")).strip()
     cell = ws["D7"]
     cell.value = consumer_no
@@ -35,9 +33,8 @@ def fill_excel(data: dict, template_path: str, output_path: str) -> str:
     ws["D8"] = float(data.get("fixed_charges") or 130)
     ws["D9"] = data.get("sanctioned_load", "")
     ws["D10"] = data.get("connection_type", "")
-    # D11 stays 600 (default solar panel watt)
 
-    # ── Monthly Units ──────────────────────────────────────────
+    # Monthly Units + Month Names
     monthly = data.get("monthly_units", [])
     if not monthly:
         raise ValueError("No monthly unit data found.")
@@ -46,25 +43,36 @@ def fill_excel(data: dict, template_path: str, output_path: str) -> str:
     bill_amount = float(data.get("bill_amount") or 0)
     units_list = [float(m.get("units", 0)) for m in monthly]
 
-    # Rows 15–26 = 12 months (months already pre-filled in column C)
     start_row = 15
     for i, entry in enumerate(monthly[:12]):
         row = start_row + i
         try:
             units = float(entry.get("units", 0))
-            # Keep zero if zero — don't skip
-            ws.cell(row=row, column=4, value=units)  # D = units
+            ws.cell(row=row, column=4, value=units)
+
+            month_str = entry.get("month", "")
+            if month_str:
+                try:
+                    dt = datetime.strptime(month_str[:10], "%Y-%m-%d")
+                    ws.cell(row=row, column=3, value=dt.strftime("%b %Y"))
+                except:
+                    ws.cell(row=row, column=3, value=month_str)
         except Exception as e:
             print(f"Warning: could not fill row {row}: {str(e)}")
             continue
 
-    # ── Bill Amount + Unit Cost in last month row ──────────────
+    # Bill Amount + Unit Cost in last month row
     if bill_amount and monthly:
         last_row = start_row + len(monthly) - 1
         last_units = units_list[-1] if units_list[-1] > 0 else 1
         unit_cost = round((bill_amount - fixed_charges) / last_units, 2)
-        ws.cell(row=last_row, column=5, value=float(bill_amount))  # E = bill amount
-        ws.cell(row=last_row, column=6, value=float(unit_cost))    # F = unit cost
+        ws.cell(row=last_row, column=5, value=float(bill_amount))
+        ws.cell(row=last_row, column=6, value=float(unit_cost))
+
+    # Row 27 = Average units (formulas in 31-34 depend on this)
+    if units_list:
+        avg_units = round(sum(units_list) / len(units_list), 2)
+        ws["D27"] = avg_units
 
     try:
         wb.save(output_path)
@@ -75,9 +83,6 @@ def fill_excel(data: dict, template_path: str, output_path: str) -> str:
 
 
 def get_summary_from_excel(data: dict) -> dict:
-    """
-    Calculate solar summary using same formulas as Excel template.
-    """
     try:
         monthly = data.get("monthly_units", [])
         if not monthly:
@@ -89,31 +94,18 @@ def get_summary_from_excel(data: dict) -> dict:
         fixed_charges = float(data.get("fixed_charges") or 130)
         bill_amount = float(data.get("bill_amount") or 0)
 
-        # Same as Excel: =(avg*12*1.1)/1400
         kw_required = (avg_units * 12 * 1.1) / 1400
-
-        # Same as Excel: =kw/600*1000
         solar_panels_raw = kw_required / 600 * 1000
-
-        # Same as Excel: =ROUND(panels,0)*600/1000
         solar_capacity = round(solar_panels_raw, 0) * 600 / 1000
-
-        # Number of panels
         number_of_panels = int(round(solar_capacity / 600 * 1000, 0))
 
-        # Unit cost from latest bill
         last_units = units_list[-1] if units_list[-1] > 0 else avg_units
         unit_cost = 0
         if bill_amount and last_units > 0:
             unit_cost = round((bill_amount - fixed_charges) / last_units, 2)
 
-        # Yearly savings (solar covers ~90% of units)
         yearly_savings = round(avg_units * 12 * unit_cost * 0.9, 0)
-
-        # Installation cost (₹45,000 per kWp)
         installation_cost = solar_capacity * 45000
-
-        # Payback period in years
         payback_years = round(installation_cost / yearly_savings, 1) if yearly_savings > 0 else 0
 
         return {
