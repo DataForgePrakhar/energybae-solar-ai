@@ -22,7 +22,6 @@ def fill_excel(data: dict, template_path: str, output_path: str) -> str:
     except Exception as e:
         raise ValueError(f"Could not open template: {str(e)}")
 
-    # Consumer Details
     ws["D6"] = data.get("consumer_name", "")
 
     consumer_no = str(data.get("consumer_no", "")).strip()
@@ -34,7 +33,6 @@ def fill_excel(data: dict, template_path: str, output_path: str) -> str:
     ws["D9"] = data.get("sanctioned_load", "")
     ws["D10"] = data.get("connection_type", "")
 
-    # Monthly Units + Month Names
     monthly = data.get("monthly_units", [])
     if not monthly:
         raise ValueError("No monthly unit data found.")
@@ -49,7 +47,6 @@ def fill_excel(data: dict, template_path: str, output_path: str) -> str:
         try:
             units = float(entry.get("units", 0))
             ws.cell(row=row, column=4, value=units)
-
             month_str = entry.get("month", "")
             if month_str:
                 try:
@@ -61,7 +58,6 @@ def fill_excel(data: dict, template_path: str, output_path: str) -> str:
             print(f"Warning: could not fill row {row}: {str(e)}")
             continue
 
-    # Bill Amount + Unit Cost in last month row
     if bill_amount and monthly:
         last_row = start_row + len(monthly) - 1
         last_units = units_list[-1] if units_list[-1] > 0 else 1
@@ -69,10 +65,22 @@ def fill_excel(data: dict, template_path: str, output_path: str) -> str:
         ws.cell(row=last_row, column=5, value=float(bill_amount))
         ws.cell(row=last_row, column=6, value=float(unit_cost))
 
-    # Row 27 = Average units (formulas in 31-34 depend on this)
     if units_list:
         avg_units = round(sum(units_list) / len(units_list), 2)
         ws["D27"] = avg_units
+        ws["D30"] = avg_units
+
+        kw_required = round((avg_units * 12 * 1.1) / 1400, 3)
+        ws["D31"] = kw_required
+
+        solar_panels_raw = kw_required / 600 * 1000
+        ws["D32"] = round(solar_panels_raw, 1)
+
+        solar_capacity = round(round(solar_panels_raw, 0) * 600 / 1000, 2)
+        ws["D33"] = solar_capacity
+
+        number_of_panels = int(round(solar_capacity / 600 * 1000, 0))
+        ws["D34"] = number_of_panels
 
     try:
         wb.save(output_path)
@@ -90,20 +98,16 @@ def get_summary_from_excel(data: dict) -> dict:
 
         units_list = [float(m.get("units", 0)) for m in monthly]
         avg_units = sum(units_list) / len(units_list)
-
         fixed_charges = float(data.get("fixed_charges") or 130)
         bill_amount = float(data.get("bill_amount") or 0)
-
         kw_required = (avg_units * 12 * 1.1) / 1400
         solar_panels_raw = kw_required / 600 * 1000
         solar_capacity = round(solar_panels_raw, 0) * 600 / 1000
         number_of_panels = int(round(solar_capacity / 600 * 1000, 0))
-
         last_units = units_list[-1] if units_list[-1] > 0 else avg_units
         unit_cost = 0
         if bill_amount and last_units > 0:
             unit_cost = round((bill_amount - fixed_charges) / last_units, 2)
-
         yearly_savings = round(avg_units * 12 * unit_cost * 0.9, 0)
         installation_cost = solar_capacity * 45000
         payback_years = round(installation_cost / yearly_savings, 1) if yearly_savings > 0 else 0
